@@ -23,7 +23,7 @@ from sensor_msgs.msg import LaserScan
 import math
 import matplotlib.pyplot as plt 
 import os
-
+#meh
 # Instantiate bridge
 
 Pbox_min_x1 = 0
@@ -51,14 +51,14 @@ class subs_every:
         
         ts = mf.TimeSynchronizer([self.image_sub, self.image_info_sub], 10)
         #ts1=mf.TimeSynchronizer([self.left_laser,self.right_laser],10)
-        ts1=mf.ApproximateTimeSynchronizer([self.left_laser,self.right_laser], queue_size=5, slop=0.1)
-        ts1.registerCallback(self.callback1)
+        #ts1=mf.ApproximateTimeSynchronizer([self.left_laser,self.right_laser], queue_size=5, slop=0.1)
+        #ts1.registerCallback(self.callback1)
         ts.registerCallback(self.callback)
 
 
     def callback1(self, left_laser, right_laser):
         print(str(right_laser))
-        print("meh")
+        
 
 
 

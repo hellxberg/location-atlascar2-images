@@ -31,5 +31,12 @@ sudo apt-get install python-numpy python-scipy python-matplotlib ipython ipython
 ```
 
 ## Foreseeable Objectives
-- Calibrate IPM system, more specifically, the system's precision
+- Calibrate IPM system, more specifically, the system's precision 
 - Create the non-obstacle polygon
+
+## How to run the algorithm
+To run the current algorithm apply the following command:
+ ```
+rosrun ipm_perception image_subscriber_v2.py
+ ```
+

@@ -18,7 +18,6 @@ from mpl_toolkits.mplot3d import Axes3D
 import time
 from timeit import default_timer as timer
 from scipy.interpolate import griddata
-from numba import jit
 
 
 
@@ -214,13 +213,13 @@ class ipm_processes:
 
         # cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/test1-IPM.jpeg',colour_img)
         # cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/test2-IPM.jpeg',out_segment_img)
-        #cv2.imshow("meh",output_img)
-        #cv2.waitKey(0)
+        cv2.imshow("Original IPM image",output_img)
+        cv2.waitKey(0)
         
         #cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/Pos-IPM.jpeg', output_img)
         
-        #interpolated_img=self.interpolation_first_phase(DISTYmax, DISTXmax,x_int,y_int,value_int)
-        #self.perspective_visualization(interpolated_img,Pbox_min_x1,Pbox_max_x1,Pbox_min_y1,Pbox_max_y1,rsf_factor)
+        interpolated_img=self.interpolation_first_phase(DISTYmax, DISTXmax,x_int,y_int,value_int)
+        self.perspective_visualization(interpolated_img,Pbox_min_x1,Pbox_max_x1,Pbox_min_y1,Pbox_max_y1,rsf_factor)
         return (output_img)
 
     def calculate_new_XY(self, Pro, point_x, point_y):
@@ -238,23 +237,15 @@ class ipm_processes:
         for i in range(len(y_int)):
             output_img[y_int[i]][x_int[i]]=value_int[i]
 
-        #cv2.imshow("meh",output_img)
-        #cv2.waitKey(0)
-
-        #print(str(xi))
         xi,yi = np.meshgrid(xi,yi)
-        #print(str(x))
-        print(str(xi))
-        # set mask
-        #mask = (xi > 0.5) & (xi < 0.6) & (yi > 0.5) & (yi < 0.6)
 
         # interpolate
         zi = griddata((x_int,y_int),value_int,(xi,yi),method='linear')
         for y in range(height):
             for x in range(width):
                 output_img[y][x]=zi[y][x]
-        #cv2.imshow("meh",output_img)
-        #cv2.waitKey(0)
+        cv2.imshow("Interpolated image",output_img)
+        cv2.waitKey(0)
         return output_img
         
 
@@ -352,5 +343,8 @@ class ipm_processes:
         y=[0,0,0]
         ax.imshow(A, extent=[Pbox_min_x, Pbox_max_x, Pbox_min_y, Pbox_max_y])
         ax.scatter(x, y,marker='o', s=10, color='r')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.title('Current IPM image')
         plt.show()
 
