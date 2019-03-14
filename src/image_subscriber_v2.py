@@ -23,6 +23,8 @@ from sensor_msgs.msg import LaserScan
 import math
 import matplotlib.pyplot as plt 
 import os
+import time
+from timeit import default_timer as timer
 #meh
 # Instantiate bridge
 
@@ -50,37 +52,79 @@ class subs_every:
         self.right_laser=mf.Subscriber("/frontal_laser_right/laserscan",LaserScan)
         
         ts = mf.TimeSynchronizer([self.image_sub, self.image_info_sub], 10)
-        #ts1=mf.TimeSynchronizer([self.left_laser,self.right_laser],10)
-        #ts1=mf.ApproximateTimeSynchronizer([self.left_laser,self.right_laser], queue_size=5, slop=0.1)
-        #ts1.registerCallback(self.callback1)
+        ts1=mf.ApproximateTimeSynchronizer([self.left_laser,self.right_laser], queue_size=5, slop=0.1)
+        ts1.registerCallback(self.callback1)
         ts.registerCallback(self.callback)
 
 
     def callback1(self, left_laser, right_laser):
-        print(str(right_laser))
+        left_laser_frame="frontal_laser_left"
+        right_laser_frame="frontal_laser_right"
+        road_frame="road"
+
+        left_tf=self.listening_TF(road_frame,left_laser_frame)
+        right_tf=self.listening_TF(road_frame,right_laser_frame)
         
+        start1 = timer()
+        if((left_tf is not None) and (right_tf is not None)):
+            print("Initialization of points creation")
+            self.cloud2cartesian(left_laser,right_laser,left_tf,right_tf)
+            rospy.sleep(1000)
+        print("Time required to compute all the points")
+        print(str(timer()-start1))
 
 
 
-    def process_scan_left(self,left_laser):
-        if(self.flag_laser_left==0):
-            self.flag_laser_left=1
-            lp = lg.LaserProjection()
-            pc2_msg=lp.projectLaser(left_laser)
-            point_generator=pc2.read_points(pc2_msg)
-            x=[]
-            y=[]
-            for point in point_generator:
-                if not math.isnan(point[2]):
-                    x.append(point[0])
-                    y.append(point[1])
-            plt.scatter(x,y)
-            plt.show(block=True)
-            print(str(point_generator))
-            #self.information_organization(left_laser)
+    def cloud2cartesian(self,left_laser,right_laser,left_tf,right_tf):
+        #Change the transforma matrices
+        #Especifically put z=0, and accept only rotations in z axes
+        left_tf=self.adapt_tf_situation1(left_tf)
+        right_tf=self.adapt_tf_situation1(right_tf)
+        left_points=self.generate_cartesian_points(left_laser,left_tf)
+
+        x=[]
+        y=[]
+        for point in left_points:
+            x.append(point[0])
+            y.append(point[1])
+        plt.scatter(x,y,color='r')
+        right_points=self.generate_cartesian_points(right_laser,right_tf)
+        x=[]
+        y=[]
+        for point in right_points:
+            x.append(point[0])
+            y.append(point[1])
+        plt.scatter(x,y,color='b')
+        plt.title("Representation of existing obstacles")
+        plt.show()
+        
+    def adapt_tf_situation1(self,a_tf):
+        #Function that changes the tf matrice for a especific situation
+        # a_tf=the matrice to be changed 
+        a_tf[2][0]=0
+        a_tf[2][1]=0
+        a_tf[0][2]=0
+        a_tf[1][2]=0
+        a_tf[2][2]=1
+        a_tf[2][3]=0
+        new_tf=np.array([[a_tf[0][0],a_tf[0][1],a_tf[0][3]],[a_tf[1][0],a_tf[1][1],a_tf[1][3]],[0,0,1]])
+        return new_tf
 
 
-
+    def generate_cartesian_points(self,point_cloud,tf_matrice):
+        #Fuction to map all the points from the "point_cloud" variable to correct cartesian points
+        #point_cloud=cloud of points from which it will be extracted every point individually
+        #tf_matrice=Transfrom matrix from the road to the laser sensor
+        lp=lg.LaserProjection()
+        pc2_msg=lp.projectLaser(point_cloud)
+        point_generator=pc2.read_points(pc2_msg)
+        cart_points=[]
+        for point in point_generator:
+            if not math.isnan(point[2]):
+                init_coord=np.array([[(point[0])*1000],[(point[1])*1000],[1]])
+                final_coord=np.dot(tf_matrice,init_coord)
+                cart_points.append(final_coord)
+        return cart_points
 
 
     def information_organization(self,laser):
@@ -103,19 +147,17 @@ class subs_every:
 
     def callback(self, some_image, some_image_info):
         # Rececao de informacao pertinente, no entanto tudo sera processado apenas a rececao de tf
-        self.trans_matrix = self.listening_TF()
-        # Caso a tf tenha informacao
-        #print(str(self.trans_matrix))
+        final_frame="frontal_camera_optical"
+        initial_frame="road"
+        self.trans_matrix = self.listening_TF(final_frame,initial_frame)
         if(self.trans_matrix is not None):
             self.P = some_image_info.P
             # self.P=some_image_info.K
-            # Another
 
             try:
                 # Converting your ROS Image message to OpenCv2
                 self.cv2_img = self.bridge.imgmsg_to_cv2(some_image, "bgr8")
                 self.flag_synch = 1
-                #print("Yep")
             except CvBridgeError as e:
                 print(e)
             else:
@@ -123,14 +165,13 @@ class subs_every:
             
 
 
-    def listening_TF(self):
+    def listening_TF(self,final_frame,initial_frame):
         listener = tf.TransformListener()
-        #listener.waitForTransform("frontal_camera_optical","road", rospy.Time(), rospy.Duration(4.0))
         while not rospy.is_shutdown():
             try:
                 now = rospy.Time.now()
-                listener.waitForTransform("frontal_camera_optical", "road", now, rospy.Duration(1.0))
-                (trans, rot) = listener.lookupTransform("frontal_camera_optical", "road", now)
+                listener.waitForTransform(final_frame, initial_frame, now, rospy.Duration(1.0))
+                (trans, rot) = listener.lookupTransform(final_frame, initial_frame, now)
                 for i in range(len(trans)):
                     trans[i] = trans[i]*1000
 
@@ -139,6 +180,7 @@ class subs_every:
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 continue
             break
+
         return transf_matrix
 
 

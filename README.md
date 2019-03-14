@@ -30,6 +30,13 @@ sudo apt-get install python-opencv
 sudo apt-get install python-numpy python-scipy python-matplotlib ipython ipython-notebook python-pandas python-sympy python-nose
 ```
 
+### Data
+The algorithm will search for especific data being publish by ATLASCAR2. 
+The user most play the bag file 'target5.bag' with the following command:
+```
+rosbag play -l target5.bag
+```
+
 ## Foreseeable Objectives
 - Calibrate IPM system, more specifically, the system's precision 
 - Create the non-obstacle polygon
