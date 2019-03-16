@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 import os
 import time
 from timeit import default_timer as timer
-#meh
+
 # Instantiate bridge
 
 Pbox_min_x1 = 0
@@ -41,7 +41,7 @@ class subs_every:
     flag_synch = 0
     flag_laser_left=0
     flag_laser_right=0
-
+    global ipm_x
 
     def __init__(self):
         self.bridge = CvBridge()
@@ -68,63 +68,10 @@ class subs_every:
         start1 = timer()
         if((left_tf is not None) and (right_tf is not None)):
             print("Initialization of points creation")
-            self.cloud2cartesian(left_laser,right_laser,left_tf,right_tf)
+            ipm_x.sensor_fusion(left_laser,right_laser,left_tf,right_tf)
             rospy.sleep(1000)
         print("Time required to compute all the points")
         print(str(timer()-start1))
-
-
-
-    def cloud2cartesian(self,left_laser,right_laser,left_tf,right_tf):
-        #Change the transforma matrices
-        #Especifically put z=0, and accept only rotations in z axes
-        left_tf=self.adapt_tf_situation1(left_tf)
-        right_tf=self.adapt_tf_situation1(right_tf)
-        left_points=self.generate_cartesian_points(left_laser,left_tf)
-
-        x=[]
-        y=[]
-        for point in left_points:
-            x.append(point[0])
-            y.append(point[1])
-        plt.scatter(x,y,color='r')
-        right_points=self.generate_cartesian_points(right_laser,right_tf)
-        x=[]
-        y=[]
-        for point in right_points:
-            x.append(point[0])
-            y.append(point[1])
-        plt.scatter(x,y,color='b')
-        plt.title("Representation of existing obstacles")
-        plt.show()
-        
-    def adapt_tf_situation1(self,a_tf):
-        #Function that changes the tf matrice for a especific situation
-        # a_tf=the matrice to be changed 
-        a_tf[2][0]=0
-        a_tf[2][1]=0
-        a_tf[0][2]=0
-        a_tf[1][2]=0
-        a_tf[2][2]=1
-        a_tf[2][3]=0
-        new_tf=np.array([[a_tf[0][0],a_tf[0][1],a_tf[0][3]],[a_tf[1][0],a_tf[1][1],a_tf[1][3]],[0,0,1]])
-        return new_tf
-
-
-    def generate_cartesian_points(self,point_cloud,tf_matrice):
-        #Fuction to map all the points from the "point_cloud" variable to correct cartesian points
-        #point_cloud=cloud of points from which it will be extracted every point individually
-        #tf_matrice=Transfrom matrix from the road to the laser sensor
-        lp=lg.LaserProjection()
-        pc2_msg=lp.projectLaser(point_cloud)
-        point_generator=pc2.read_points(pc2_msg)
-        cart_points=[]
-        for point in point_generator:
-            if not math.isnan(point[2]):
-                init_coord=np.array([[(point[0])*1000],[(point[1])*1000],[1]])
-                final_coord=np.dot(tf_matrice,init_coord)
-                cart_points.append(final_coord)
-        return cart_points
 
 
     def information_organization(self,laser):
@@ -185,12 +132,14 @@ class subs_every:
 
 
 def main():
+    global ipm_x
+    ipm_x= ipm_processes()
+    
     # Initialize important nodes
     img_pub = rospy.Publisher('Full_IPM', Image, queue_size=10)
     rospy.init_node('receive_node')
-
     info_c = subs_every()
-    ipm_x = ipm_processes()
+    
     flag_publish = 0
     time1 = rospy.Time.now()
     flag_first_time = 0
