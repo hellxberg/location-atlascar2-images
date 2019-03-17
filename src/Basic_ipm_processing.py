@@ -21,12 +21,13 @@ from scipy.interpolate import griddata
 import laser_geometry.laser_geometry as lg
 import sensor_msgs.point_cloud2 as pc2
 from cloud_points_processing import cloud_points_processing
-
+from matplotlib.path import Path 
+import matplotlib.patches as patches
 
 
 class ipm_processes:
 
-    def __init__(self):
+    def __init__(self,rsf_scale):
         self.bridge = CvBridge()
         #Construct cars limits
         #TODO put car limits in cloud_points class
@@ -38,7 +39,7 @@ class ipm_processes:
         self.width = 0
         self.height = 0
         self.Pbox_min_x1 = 0
-        self.Pbox_min_y1 = -1500
+        self.Pbox_min_y1 = -3000
         self.Pbox_max_x1 = 4000
         self.Pbox_max_y1 = abs(self.Pbox_min_y1)
         #Second box, which is bigger, just for report purposes
@@ -52,7 +53,7 @@ class ipm_processes:
         self.x_cloud=[]
         self.y_cloud=[]
         #Scaling variables
-        self.rsf_scale = 15 #IN percentage
+        self.rsf_scale = rsf_scale #IN percentage
         self.rsf_factor = (self.rsf_scale/100.0)
         self.rescaling_factor = 10 #Rescalling of base image
         #Update projection variables with rsf scaling
@@ -136,7 +137,7 @@ class ipm_processes:
         else:
             (ori_image_r,k)=self.image_rescale_debugg(k,img_width,img_height)
             #(ori_image_r, k, width, height) = self.adjust_out_imgs(rescaling_factor, k, ori_image,width,height)
-
+        
         
         # Rescalling proj matrix
         proj[0][3] = proj[0][3]*self.rsf_factor
@@ -192,7 +193,7 @@ class ipm_processes:
         cv2.waitKey(0)
 
         
-        interpolated_img=self.interpolation_first_phase(self.DISTYmax, self.DISTXmax,x_int,y_int,value_int)
+        interpolated_img=self.interpolation_first_phase(x_int,y_int,value_int)
         #self.perspective_visualization(interpolated_img,Pbox_min_x1,Pbox_max_x1,Pbox_min_y1,Pbox_max_y1,rsf_factor)
         self.points_in_image(interpolated_img)
         return (output_img)
@@ -207,25 +208,35 @@ class ipm_processes:
     def points_in_image(self,interpolated_img):
         #Function for debugginf purposes
         #functions which puts existing coordinates over ipm image
+
         plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
-        plt.plot(self.x_cloud*self.rescaling_factor,self.y_cloud*self.rescaling_factor,'o')
+        #x_cloud_v1 = [x * self.rsf_factor for x in self.x_cloud]
+        #y_cloud_v1 = [y * self.rsf_factor for y in self.y_cloud]
+        x_cloud_v1=[]
+        y_cloud_v1=[]
+        for i in range(len(self.x_cloud)):
+            x_value=self.x_cloud[i]*self.rsf_factor
+            y_value=self.y_cloud[i]*self.rsf_factor
+            if( (x_value < self.Pbox_max_x1 and x_value > self.Pbox_min_x1) and (y_value < self.Pbox_max_y1 and y_value > self.Pbox_min_y1) ):
+                x_cloud_v1.append(x_value)
+                y_cloud_v1.append(y_value) 
+        plt.plot(x_cloud_v1,y_cloud_v1,'o')
         plt.show()
 
-    def interpolation_first_phase(self,height, width,x_int,y_int,value_int):
+    def interpolation_first_phase(self,x_int,y_int,value_int):
         #Function to interpolate from given values
-
         # target grid to interpolate to
-        xi = yi = np.arange(0,width,1)
-        output_img = np.zeros((height, width, 3), np.uint8)
+        xi = np.arange(0,self.DISTXmax,1)
+        yi = np.arange(0,self.DISTYmax,1)
+        output_img = np.zeros((self.DISTYmax, self.DISTXmax, 3), np.uint8)
         for i in range(len(y_int)):
             output_img[y_int[i]][x_int[i]]=value_int[i]
 
         xi,yi = np.meshgrid(xi,yi)
-
         # interpolate
         zi = griddata((x_int,y_int),value_int,(xi,yi),method='linear')
-        for y in range(height):
-            for x in range(width):
+        for y in range(self.DISTYmax):
+            for x in range(self.DISTXmax):
                 output_img[y][x]=zi[y][x]
         cv2.imshow("Interpolated image",output_img)
         cv2.waitKey(0)
@@ -319,19 +330,9 @@ class ipm_processes:
 
 
 
-    def sensor_fusion(self,left_laser,right_laser,left_tf,right_tf):
-        #Function that organizes the cloud point information
-        #TODO organize code to accept any number of cloud points
-        cpoint=cloud_points_processing()
-        print("mehhhhhhhhhhh")
-        laser_points=[]
-        laser_tf=[]
-        laser_points.append(left_laser)
-        #laser_points.append(right_laser)
-        laser_tf.append(left_tf)
-        #laser_tf.append(right_tf)
-        (x,y)=cpoint.cloud2cartesian(laser_points,laser_tf)
-        self.x_cloud=x
-        self.y_cloud=y
+   
+
+
+    
         
 

@@ -25,13 +25,8 @@ import matplotlib.pyplot as plt
 import os
 import time
 from timeit import default_timer as timer
+from cloud_points_processing import cloud_points_processing
 
-# Instantiate bridge
-
-Pbox_min_x1 = 0
-Pbox_min_y1 = 0
-Pbox_max_x1 = 0
-Pbox_max_y1 = 0
 
 
 class subs_every:
@@ -42,15 +37,16 @@ class subs_every:
     flag_laser_left=0
     flag_laser_right=0
     global ipm_x
+    global cloud_x
 
     def __init__(self):
         self.bridge = CvBridge()
-        # Initialization of class
+        # Initialization of subscritptions
         self.image_sub = mf.Subscriber("/frontal_camera/image_color", Image)
         self.image_info_sub = mf.Subscriber("/frontal_camera/camera_info", CameraInfo)
         self.left_laser=mf.Subscriber("/frontal_laser_left/laserscan",LaserScan)
         self.right_laser=mf.Subscriber("/frontal_laser_right/laserscan",LaserScan)
-        
+        #Do the callbacks
         ts = mf.TimeSynchronizer([self.image_sub, self.image_info_sub], 10)
         ts1=mf.ApproximateTimeSynchronizer([self.left_laser,self.right_laser], queue_size=5, slop=0.1)
         ts1.registerCallback(self.callback1)
@@ -68,7 +64,7 @@ class subs_every:
         start1 = timer()
         if((left_tf is not None) and (right_tf is not None)):
             print("Initialization of points creation")
-            ipm_x.sensor_fusion(left_laser,right_laser,left_tf,right_tf)
+            cloud_x.main_processing_unit(left_laser,right_laser,left_tf,right_tf)
             rospy.sleep(1000)
         print("Time required to compute all the points")
         print(str(timer()-start1))
@@ -132,8 +128,12 @@ class subs_every:
 
 
 def main():
+    #Define the most importante variables
+    rsf_scale=15 #In percentage
     global ipm_x
-    ipm_x= ipm_processes()
+    global cloud_x
+    cloud_x=cloud_points_processing(rsf_scale)
+    ipm_x= ipm_processes(rsf_scale)
     
     # Initialize important nodes
     img_pub = rospy.Publisher('Full_IPM', Image, queue_size=10)
