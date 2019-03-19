@@ -10,6 +10,21 @@ from shapely.ops import cascaded_union
 class cloud_points_processing:
 
 
+    def __init__(self,rsf_factor):
+        self.rsf_factor=rsf_factor
+        self.car_hitbox_max_x=0.1*1000
+        self.car_hitbox_min_x=-3.0*1000
+        self.car_hitbox_max_y=0.8*1000
+        self.car_hitbox_min_y=-0.8*1000
+        self.poly_coord_x=[]
+        self.poly_coord_y=[]
+        self.laser_tf=[]
+        self.laser_points=[]
+        self.initial_cloud_coords=[]
+        self.final_cloud_coords=[]
+        self.joint_final_coords=[]
+
+
     def main_processing_unit(self,left_laser,right_laser,left_tf,right_tf):
         #Function that organizes the cloud point information
         #TODO organize code to accept any number of cloud points
@@ -21,16 +36,18 @@ class cloud_points_processing:
         laser_tf.append(left_tf)
         laser_tf.append(right_tf)
         (all_coords)=self.cloud2cartesian(laser_points,laser_tf)
+        self.initial_cloud_coords=all_coords
+        print("\nDebug all_coords "+str(all_coords[0])+"\n")
+        self.vertices_x=[p[0] for p in all_coords[0]]
+        self.vertices_y=[p[1] for p in all_coords[0]]
+        
+
         #(coord2)=cpoint.cloud2cartesian(left_laser,right_tf)
-        (poly3)=self.total_poly_creation(all_coords)
+        poly_coord_y,poly_coord_x=self.total_poly_creation(all_coords)
+        self.poly_coord_x=poly_coord_x
+        #print("meh    "+str(self.poly_coord_x))
+        self.poly_coord_y=poly_coord_y
 
-
-    def __init__(self,rsf_factor):
-        self.rsf_factor=rsf_factor
-        self.car_hitbox_max_x=0.1*1000
-        self.car_hitbox_min_x=-3.0*1000
-        self.car_hitbox_max_y=0.8*1000
-        self.car_hitbox_min_y=-0.8*1000
 
 
     def polygon_creation(self,x,y):
@@ -46,14 +63,19 @@ class cloud_points_processing:
             each_laser=[]
             the_tf=self.adapt_tf_situation1(tfss[i])
             the_laser=self.generate_cartesian_points(lasers[i],the_tf)
+            
             for point in the_laser:
+                #print("\n point "+str(point[0])+"with type "+str(type(point[0]))+"\n")
                 #Condition to ignore the car 
-                if((point[0]<=self.car_hitbox_max_x and point[0]>=self.car_hitbox_min_x) and (point[1]<=self.car_hitbox_max_y and point[1]>=self.car_hitbox_min_y)):
-                    continue
-                else:
-                    each_laser.append([point[0],point[1]])
+                #if((point[0]<=self.car_hitbox_max_x and point[0]>=self.car_hitbox_min_x) and (point[1]<=self.car_hitbox_max_y and point[1]>=self.car_hitbox_min_y)):
+                 #   continue
+                #else:
+                each_laser.append([point[0,0],point[1,0]])
+                    #print("\n each_laser "+str(each_laser)+"\n")
+                    #print("Debugging "+str(each_laser))
             all_coord_lasers.append(each_laser)
-        return all_coord_lasers
+        #print("All the coordinates "+str(all_coord_lasers[:][0]))
+        return all_coord_lasers 
 
     def construct_polygon(self,coords):
         x_coord=[coord[0] for coord in coords]
@@ -69,7 +91,9 @@ class cloud_points_processing:
             multi_poly.append(self.construct_polygon(one_coord))
         
         final_poly=cascaded_union(multi_poly)
-        return final_poly
+        x_poly_final=[int(a_coord) for a_coord in final_poly.exterior.coords.xy[0]]
+        y_poly_final=[int(a_coord) for a_coord in final_poly.exterior.coords.xy[1]]
+        return y_poly_final,x_poly_final
 
 
     def adapt_tf_situation1(self,a_tf):
@@ -82,7 +106,7 @@ class cloud_points_processing:
         a_tf[1][2]=0
         a_tf[2][2]=1
         a_tf[2][3]=0
-        new_tf=np.array([[a_tf[0][0],a_tf[0][1],a_tf[0][3]],[a_tf[1][0],a_tf[1][1],a_tf[1][3]],[0,0,1]])
+        new_tf=np.array([[a_tf[0][0],a_tf[0][1],a_tf[0][3]*self.rsf_factor],[a_tf[1][0],a_tf[1][1],a_tf[1][3]*self.rsf_factor],[0,0,1]])
         return new_tf
 
 
@@ -94,9 +118,11 @@ class cloud_points_processing:
         pc2_msg=lp.projectLaser(point_cloud)
         point_generator=pc2.read_points(pc2_msg)
         cart_points=[]
+        print("rsf_factor "+str(self.rsf_factor))
+        #print("point_generator "+str(point_generator))
         for point in point_generator:
             if not math.isnan(point[2]):
-                init_coord=np.array([[(point[0])*1000],[(point[1])*1000],[1]])
+                init_coord=np.array([[((point[0])*1000)*self.rsf_factor],[((point[1])*1000)*self.rsf_factor],[1]])
                 final_coord=np.dot(tf_matrice,init_coord)
                 cart_points.append(final_coord)
 

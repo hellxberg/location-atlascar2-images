@@ -36,6 +36,7 @@ class subs_every:
     flag_synch = 0
     flag_laser_left=0
     flag_laser_right=0
+    flag_synch_debug=0
     global ipm_x
     global cloud_x
 
@@ -60,14 +61,13 @@ class subs_every:
 
         left_tf=self.listening_TF(road_frame,left_laser_frame)
         right_tf=self.listening_TF(road_frame,right_laser_frame)
-        
-        start1 = timer()
+
         if((left_tf is not None) and (right_tf is not None)):
-            print("Initialization of points creation")
             cloud_x.main_processing_unit(left_laser,right_laser,left_tf,right_tf)
-            rospy.sleep(1000)
-        print("Time required to compute all the points")
-        print(str(timer()-start1))
+            ipm_x.set_coll_param(cloud_x.poly_coord_x,cloud_x.poly_coord_y)
+            ipm_x.set_initial_coll_coords(cloud_x.initial_cloud_coords)
+            ipm_x.set_coll_coordinates(cloud_x.vertices_x,cloud_x.vertices_y)
+            self.flag_synch_debug=1
 
 
     def information_organization(self,laser):
@@ -96,7 +96,6 @@ class subs_every:
         if(self.trans_matrix is not None):
             self.P = some_image_info.P
             # self.P=some_image_info.K
-
             try:
                 # Converting your ROS Image message to OpenCv2
                 self.cv2_img = self.bridge.imgmsg_to_cv2(some_image, "bgr8")
@@ -123,17 +122,17 @@ class subs_every:
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 continue
             break
-
         return transf_matrix
 
 
 def main():
     #Define the most importante variables
     rsf_scale=15 #In percentage
+    rsf_factor = (rsf_scale/100.0)
     global ipm_x
     global cloud_x
-    cloud_x=cloud_points_processing(rsf_scale)
-    ipm_x= ipm_processes(rsf_scale)
+    cloud_x=cloud_points_processing(rsf_factor)
+    ipm_x= ipm_processes(rsf_factor)
     
     # Initialize important nodes
     img_pub = rospy.Publisher('Full_IPM', Image, queue_size=10)
@@ -146,7 +145,7 @@ def main():
 
     while not rospy.is_shutdown():
         #print(str(info_c.flag_synch))
-        if(flag_first_time == 0 and info_c.flag_synch == 1):
+        if(flag_first_time == 0 and info_c.flag_synch == 1 and info_c.flag_synch_debug==1):
             print("Passa aqui")
             flag_first_time = 1
             IPM_img=ipm_x.IPM(info_c)
