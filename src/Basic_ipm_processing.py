@@ -5,6 +5,8 @@ import numpy as np
 from decimal import Decimal
 import math
 from shapely.geometry import MultiPoint
+from shapely.geometry import Point
+from shapely.geometry.polygon import Polygon
 import sys
 import matplotlib.pyplot as plt
 import copy
@@ -40,7 +42,7 @@ class ipm_processes:
         self.height = 0
         self.Pbox_min_x1 = 0
         self.Pbox_min_y1 = -3000
-        self.Pbox_max_x1 = 6000
+        self.Pbox_max_x1 = 7000
         self.Pbox_max_y1 = abs(self.Pbox_min_y1)
         #Second box, which is bigger, just for report purposes
         self.Pbox_min_x2 = -3000
@@ -54,7 +56,7 @@ class ipm_processes:
         self.y_cloud=[]
         #Scaling variables
         self.rsf_factor = rsf_factor
-        self.rescaling_factor = 10 #Rescalling of base image
+        self.rescaling_factor = 8 #Rescalling of base image
         #Update projection variables with rsf scaling
         self.Pbox_min_x1=int(self.Pbox_min_x1*self.rsf_factor)
         self.Pbox_min_y1 =int(self.Pbox_min_y1*self.rsf_factor)
@@ -102,6 +104,10 @@ class ipm_processes:
         self.vertices_y=vertices_y
 
 
+    def set_full_polygon_coords(self,coll_coord_x,coll_coord_y):
+        self.coll_coord_x=coll_coord_x
+        self.coll_coord_y=coll_coord_y 
+
     def set_initial_coll_coords(self,initial_cloud_coords):
         self.initial_coll_coords=initial_cloud_coords
 
@@ -109,6 +115,9 @@ class ipm_processes:
     def set_width_height(self, width, height):
         self.width1 = width
         self.height1 = height
+
+    def set_polygon_final(self,final_poly):
+        self.final_poly=final_poly
 
 
     def image_rescale_debugg(self,k,original_width,original_height):
@@ -168,13 +177,17 @@ class ipm_processes:
             (ori_image_r,k)=self.image_rescale_debugg(k,img_width,img_height)
             #(ori_image_r, k, width, height) = self.adjust_out_imgs(rescaling_factor, k, ori_image,width,height)
         
-        
+
         # Rescalling proj matrix
         proj[0][3] = proj[0][3]*self.rsf_factor
         proj[1][3] = proj[1][3]*self.rsf_factor
         proj[2][3] = proj[2][3]*self.rsf_factor
         Pro2 = np.dot(k, proj)
-        #self.perspective_mapping(Pro2)
+
+        #TODO i need to change the intrinsic and extrinsic parameters to original settings
+        #self.perspective_mapping(copy.deepcopy(Pro2),ori_image_r)
+        print("meh")
+       
         #For interpolation
         x_int=[]
         y_int=[]
@@ -206,7 +219,7 @@ class ipm_processes:
                     if(self.flag_debugging_mode==1):
                         colour_img[int(Mapy[v][u]) + abs(self.Pbox_min_y2)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x2)-1]=[0,200,0]'''
                 
-        (output_img,Mapx,Mapy,Mapped,Gmapped)=self.pixel_mapping_v2(Pro2)
+        (output_img,Mapx,Mapy,Mapped,Gmapped)=self.pixel_mapping_v3(Pro2)
         
         
         for u in range(self.width):
@@ -219,7 +232,7 @@ class ipm_processes:
                     y_int.append(int(Mapy[v][u]) + abs(self.Pbox_min_y1)-1)
                     value_int.append(ori_image_r[v][u])
         
-        
+        cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/IPM_almost_multi_modal.jpeg', output_img)
         # Cyle for for interpolation
         end = timer()
         print("Time"+str(end-start))
@@ -239,7 +252,7 @@ class ipm_processes:
         
         interpolated_img=self.interpolation_first_phase(x_int,y_int,value_int)
         #self.perspective_visualization(interpolated_img,Pbox_min_x1,Pbox_max_x1,Pbox_min_y1,Pbox_max_y1,rsf_factor)
-        self.points_in_image_v2(interpolated_img)
+        self.points_in_image_v2(interpolated_img,copy.deepcopy(Pro2),ori_image_r)
         return (output_img)
 
     def calculate_new_XY(self, Pro, point_x, point_y):
@@ -250,26 +263,40 @@ class ipm_processes:
         return int(X), int(Y)
 
 
-    def perspective_mapping(self,Pro2,img2over):
+    def perspective_mapping(self,the_matrix,img2over):
         u=[]
         v=[]
-        coll_coord_x=self.coll_coord_x
-        coll_coord_y=self.coll_coord_y
         width=self.width
         height=self.height
+        print("Current width "+str(width))
+        print("CUrrent height "+str(height))
+        #TO check the overlay of cloud over the image the image must be change. Since the y is inverse
+        #It's only for debugging purposes
+        '''canvas_fig=np.zeros((height,width, 3), np.uint8)
+        for uu in range(width):
+            for vv in range(height):'''
+
+        plt.imshow(img2over,extent=[0, width, 0, height])
+
+        #time.sleep(1000)
+        coll_coord_x=self.coll_coord_x
+        coll_coord_y=self.coll_coord_y
+        image_scale=0
         for i in range(len(coll_coord_x)):
             vect_coord=np.array([[coll_coord_x[i]],[coll_coord_y[i]],[0],[1]])
-            image_coord=np.dot(Pro2,vect_coord)
+            image_coord=np.dot(the_matrix,vect_coord)
+            image_scale=image_coord[2]
             u.append(int(image_coord[0]))
             v.append(int(image_coord[1]))
+            
+        
+        plt.plot(v,u,'r')
+        plt.show()
         #Just for fun draw on normal image
         
 
 
-
-
-
-    def obstacle_mask(self):
+    '''def obstacle_mask(self):
 
         obstacle_points= np.zeros((self.DISTYmax,self.DISTXmax), dtype=np.uint8)
         obst_mask=np.zeros((self.DISTYmax+2,self.DISTXmax+2),dtype=np.uint8)
@@ -290,9 +317,39 @@ class ipm_processes:
 
         cv2.floodFill(obstacle_points,obst_mask,(self.center_coll_x,self.center_coll_y),255)
         cv2.imshow("meh",obst_mask)
-        cv2.waitKey(0)
+        cv2.waitKey(0)'''
 
 
+    def pixel_mapping_v3(self,Pro2):
+        #Function to create the mapes Mapx & Mapy
+        #Pro2-Matrice to transform
+        #box_limits1 & box_limits2-matrices containing the limits of the projection box
+        #image_measures-matrice with image dimensions
+
+        start = timer()
+        #self.obstacle_mask()
+        #Define here the non debugging variables ------------------------------
+        Mapx = np.zeros((self.height, self.width), dtype=int)
+        Mapy = np.zeros((self.height, self.width), dtype=int)
+        Mapped = np.zeros((self.height, self.width), dtype=int)
+        output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
+        Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
+        print("TIme making the images "+str(timer()-start))
+        start=timer()
+        for u in range(self.width):
+            for v in range(self.height):
+                x, y =self.calculate_new_XY(Pro2, u, v)
+
+                #print("Is it in or not?"+str(self.final_poly.contains(point)))
+                if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
+                    Mapx[v][u] = x
+                    Mapy[v][u] = y
+                    Mapped[v][u] = 1
+                    Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
+
+        print("Time in the loop "+str(timer()-start))
+
+        return output_img,Mapx,Mapy,Mapped,Gmapped 
 
 
 
@@ -315,34 +372,122 @@ class ipm_processes:
         for u in range(self.width):
             for v in range(self.height):
                 x, y =self.calculate_new_XY(Pro2, u, v)
-                if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
-                    Mapx[v][u] = x
-                    Mapy[v][u] = y
-                    Mapped[v][u] = 1
-                    Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
+                point=Point(x,-y)
+                #print("Is it in or not?"+str(self.final_poly.contains(point)))
+                if(self.final_poly.contains(point)):
+                    if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
+                        Mapx[v][u] = x
+                        Mapy[v][u] = y
+                        Mapped[v][u] = 1
+                        Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
 
         print("Time in the loop "+str(timer()-start))
 
         return output_img,Mapx,Mapy,Mapped,Gmapped  
 
 
-    def points_in_image_v2(self,interpolated_img):
+    def points_in_image_v2(self,interpolated_img,transf_matrix,original_img):
         #Function for visualization of the cloud points over the ipm image created
         #functions which puts existing coordinates over ipm image
         init_coords=self.initial_coll_coords
+        height=self.height
+        width=self.width
+        coll_coord_x=self.coll_coord_x
+        coll_coord_y=self.coll_coord_y
+        '''x_init1=[p[0] for p in init_coords[0]]
+        y_init1=[p[1] for p in init_coords[0]]
+        x_init2=[p[0] for p in init_coords[1]]
+        y_init2=[p[1] for p in init_coords[1]]
+        
+        plt.plot(x_init1,y_init1,'b-')
+        plt.plot(x_init2,y_init2,'r-')
+        plt.show()'''
+
         plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
         #It's prepared for only 2 clous points
         my_color=['b','r']
         i=0
+        my_labels=['Points of left laser','Points of right laser']
         for cloud in init_coords:
             x_init=[]
             y_init=[]
             for my_point in cloud:
                 x_init.append(my_point[0])
                 y_init.append(my_point[1])
-            plt.scatter(x_init,y_init,marker='o',c=my_color[i])
+            plt.scatter(x_init,y_init,marker='o',c=my_color[i],label=my_labels[i])
+        
             i+=1
+        plt.title('Overlay of each cloud points over the IPM image')
+        plt.legend()
         plt.show()
+
+        #Another format
+        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
+        my_color=['b','r']
+        j=0
+        my_labels=['Points of left laser','Points of right laser']
+        for cloud in init_coords:
+            x_init=[]
+            y_init=[]
+            for i in range(len(cloud)):
+                x_init.append(cloud[i][0])
+                y_init.append(cloud[i][1])
+            x_init.append(cloud[0][0])
+            y_init.append(cloud[0][1])
+            plt.plot(x_init,y_init,marker='o',c=my_color[j],label=my_labels[j])
+            j+=1
+
+        plt.title('Overlay of each cloud points over the IPM image')
+        plt.legend()
+        plt.show()
+
+        #Another format
+
+        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
+        x_init=[]
+        y_init=[]
+        for i in range(-1,len(coll_coord_x)):
+            
+            x_init.append(coll_coord_x[i])
+            y_init.append(coll_coord_y[i])
+
+        plt.plot(x_init,y_init,marker='o',c='r')
+
+        
+        plt.legend()
+        plt.show()
+
+
+        #Another debugging plot 
+        plt.subplot(131)
+        
+        plt.imshow(original_img,extent=[0, width, 0, height])
+
+        #time.sleep(1000)
+        u=[]
+        v=[]
+        image_scale=0
+        for i in range(len(coll_coord_x)):
+            vect_coord=np.array([[coll_coord_x[i]],[coll_coord_y[i]],[0],[1]])
+            image_coord=np.dot(transf_matrix,vect_coord)
+            image_scale=image_coord[2]
+            u.append(int(image_coord[0]))
+            v.append(int(image_coord[1]))
+        
+        plt.plot(u,v,'r')
+        plt.title('Polygon of cloud points created from the perspective mapping ')
+        plt.subplot(133)
+        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
+        plt.plot(x_init,y_init,marker='o',c='r')
+        plt.title('Overlay of each cloud points over the IPM image')
+        plt.show()
+
+
+
+
+
+
+
 
 
     def points_in_image(self,interpolated_img):
@@ -385,6 +530,7 @@ class ipm_processes:
                 output_img[y][x]=zi[y][x]
         cv2.imshow("Interpolated image",output_img)
         cv2.waitKey(0)
+        cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/interpolation.jpeg', output_img)
         return output_img
         
 

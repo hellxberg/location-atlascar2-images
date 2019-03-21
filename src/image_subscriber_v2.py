@@ -64,9 +64,11 @@ class subs_every:
 
         if((left_tf is not None) and (right_tf is not None)):
             cloud_x.main_processing_unit(left_laser,right_laser,left_tf,right_tf)
-            ipm_x.set_coll_param(cloud_x.poly_coord_x,cloud_x.poly_coord_y)
+            #pm_x.set_coll_param(cloud_x.poly_coord_x,cloud_x.poly_coord_y)
             ipm_x.set_initial_coll_coords(cloud_x.initial_cloud_coords)
-            ipm_x.set_coll_coordinates(cloud_x.vertices_x,cloud_x.vertices_y)
+            ipm_x.set_full_polygon_coords(cloud_x.poly_coord_x,cloud_x.poly_coord_y)
+            ipm_x.set_polygon_final(cloud_x.final_poly)
+            #ipm_x.set_coll_coordinates(cloud_x.vertices_x,cloud_x.vertices_y)
             self.flag_synch_debug=1
 
 
@@ -127,7 +129,7 @@ class subs_every:
 
 def main():
     #Define the most importante variables
-    rsf_scale=15 #In percentage
+    rsf_scale=10 #In percentage
     rsf_factor = (rsf_scale/100.0)
     global ipm_x
     global cloud_x

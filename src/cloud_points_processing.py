@@ -5,7 +5,7 @@ import numpy as np
 import math
 from shapely.geometry import Polygon,mapping
 from shapely.ops import cascaded_union
-
+import copy
 
 class cloud_points_processing:
 
@@ -23,6 +23,7 @@ class cloud_points_processing:
         self.initial_cloud_coords=[]
         self.final_cloud_coords=[]
         self.joint_final_coords=[]
+        self.final_poly=0
 
 
     def main_processing_unit(self,left_laser,right_laser,left_tf,right_tf):
@@ -36,17 +37,12 @@ class cloud_points_processing:
         laser_tf.append(left_tf)
         laser_tf.append(right_tf)
         (all_coords)=self.cloud2cartesian(laser_points,laser_tf)
-        self.initial_cloud_coords=all_coords
-        print("\nDebug all_coords "+str(all_coords[0])+"\n")
-        self.vertices_x=[p[0] for p in all_coords[0]]
-        self.vertices_y=[p[1] for p in all_coords[0]]
-        
 
-        #(coord2)=cpoint.cloud2cartesian(left_laser,right_tf)
+        self.initial_cloud_coords=copy.deepcopy(all_coords)
+
         poly_coord_y,poly_coord_x=self.total_poly_creation(all_coords)
-        self.poly_coord_x=poly_coord_x
-        #print("meh    "+str(self.poly_coord_x))
-        self.poly_coord_y=poly_coord_y
+        self.poly_coord_x=copy.deepcopy(poly_coord_x)
+        self.poly_coord_y=copy.deepcopy(poly_coord_y)
 
 
 
@@ -63,36 +59,37 @@ class cloud_points_processing:
             each_laser=[]
             the_tf=self.adapt_tf_situation1(tfss[i])
             the_laser=self.generate_cartesian_points(lasers[i],the_tf)
-            
-            for point in the_laser:
+            '''for point in the_laser:
                 #print("\n point "+str(point[0])+"with type "+str(type(point[0]))+"\n")
                 #Condition to ignore the car 
-                #if((point[0]<=self.car_hitbox_max_x and point[0]>=self.car_hitbox_min_x) and (point[1]<=self.car_hitbox_max_y and point[1]>=self.car_hitbox_min_y)):
-                 #   continue
-                #else:
-                each_laser.append([point[0,0],point[1,0]])
-                    #print("\n each_laser "+str(each_laser)+"\n")
-                    #print("Debugging "+str(each_laser))
-            all_coord_lasers.append(each_laser)
-        #print("All the coordinates "+str(all_coord_lasers[:][0]))
+                if((point[0]<=self.car_hitbox_max_x and point[0]>=self.car_hitbox_min_x) and (point[1]<=self.car_hitbox_max_y and point[1]>=self.car_hitbox_min_y)):
+                   continue
+                else:
+                    each_laser.append([point[0,0],point[1,0]])'''
+                    
+            all_coord_lasers.append(the_laser)
+
         return all_coord_lasers 
 
     def construct_polygon(self,coords):
         x_coord=[coord[0] for coord in coords]
         y_coord=[coord[1] for coord in coords]
-        centroide=(sum(x_coord)/len(coords),sum(y_coord)/len(coords)) 
-        coords.sort(key=lambda p: math.atan2((p[1]-centroide[1]),(centroide[0]-p[0])))
+        #centroide=(sum(x_coord)/len(coords),sum(y_coord)/len(coords)) 
+        #coords.sort(key=lambda p: math.atan2((p[1]-centroide[1]),(centroide[0]-p[0])))
         poly=Polygon(coords)
         return poly
 
     def total_poly_creation(self,coords):
         multi_poly=[]
         for one_coord in coords:
-            multi_poly.append(self.construct_polygon(one_coord))
+            multi_poly.append(Polygon(one_coord))
         
         final_poly=cascaded_union(multi_poly)
+        self.final_poly=final_poly
         x_poly_final=[int(a_coord) for a_coord in final_poly.exterior.coords.xy[0]]
         y_poly_final=[int(a_coord) for a_coord in final_poly.exterior.coords.xy[1]]
+        '''plt.plot(x_poly_final,y_poly_final,'r-')
+        plt.show()'''
         return y_poly_final,x_poly_final
 
 
@@ -118,12 +115,28 @@ class cloud_points_processing:
         pc2_msg=lp.projectLaser(point_cloud)
         point_generator=pc2.read_points(pc2_msg)
         cart_points=[]
-        print("rsf_factor "+str(self.rsf_factor))
-        #print("point_generator "+str(point_generator))
+
+        #Extract the cloud points to list format
+        x_init=[]
+        y_init=[]
+        cart_points_organized=[]
         for point in point_generator:
             if not math.isnan(point[2]):
-                init_coord=np.array([[((point[0])*1000)*self.rsf_factor],[((point[1])*1000)*self.rsf_factor],[1]])
-                final_coord=np.dot(tf_matrice,init_coord)
-                cart_points.append(final_coord)
-
+                cart_points_organized.append([point[0],point[1]])
+        
+        #Reorganize the coordinates
+        cart_points_organized.sort(key=lambda p: math.atan2((p[1]-0),(0-p[0])))
+        
+        #Transform the current coordinates
+        for point in cart_points_organized:
+            init_coord=np.array([[((point[0])*1000)*self.rsf_factor],[((point[1])*1000)*self.rsf_factor],[1]])
+            final_coord=np.dot(tf_matrice,init_coord)
+            x_init.append(final_coord[0])
+            y_init.append(final_coord[1])
+            cart_points.append(final_coord)
+      
+        '''x_init=[p[0] for p in cart_points]
+        y_init=[p[1] for p in cart_points]
+        plt.plot(x_init,y_init,'o-')
+        plt.show()'''
         return cart_points
