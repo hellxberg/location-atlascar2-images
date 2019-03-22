@@ -530,7 +530,6 @@ class ipm_processes:
                 output_img[y][x]=zi[y][x]
         cv2.imshow("Interpolated image",output_img)
         cv2.waitKey(0)
-        cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/interpolation.jpeg', output_img)
         return output_img
         
 
