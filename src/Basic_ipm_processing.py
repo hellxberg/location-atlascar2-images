@@ -468,10 +468,10 @@ class ipm_processes:
         v=[]
         image_scale=0
         for i in range(len(coll_coord_x)):
-            vect_coord=np.array([[coll_coord_x[i]],[coll_coord_y[i]],[0],[1]])
+            vect_coord=np.array([[coll_coord_x[i]],[-coll_coord_y[i]],[0],[1]])
             image_coord=np.dot(transf_matrix,vect_coord)
             image_scale=image_coord[2]
-            u.append(int(image_coord[0]))
+            u.append(int(-image_coord[0]))
             v.append(int(image_coord[1]))
         
         plt.plot(u,v,'r')

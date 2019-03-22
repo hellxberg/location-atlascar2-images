@@ -32,6 +32,8 @@ sudo apt-get install python-numpy python-scipy python-matplotlib ipython ipython
 
 ### Data
 The algorithm will search for especific data being publish by ATLASCAR2. 
+This data is stored in a bag file that can be downloaded at https://www.dropbox.com/s/7v2xp7yw5z3yby2/target5.bag?dl=0
+
 The user most play the bag file 'target5.bag' with the following command:
 ```
 rosbag play -l target5.bag
