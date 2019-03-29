@@ -6,7 +6,7 @@ from decimal import Decimal
 import math
 from shapely.geometry import MultiPoint
 from shapely.geometry import Point
-from shapely.geometry.polygon import Polygon
+from shapely.geometry import Polygon,MultiPolygon
 import sys
 import matplotlib.pyplot as plt
 import copy
@@ -219,7 +219,9 @@ class ipm_processes:
                     if(self.flag_debugging_mode==1):
                         colour_img[int(Mapy[v][u]) + abs(self.Pbox_min_y2)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x2)-1]=[0,200,0]'''
                 
-        (output_img,Mapx,Mapy,Mapped,Gmapped)=self.pixel_mapping_v3(Pro2)
+
+        obstacle_mask=self.free_obstacle_masking(copy.deepcopy(k),copy.deepcopy(proj),ori_image_r)        
+        (output_img,Mapx,Mapy,Mapped,Gmapped)=self.pixel_mapping_v3(Pro2,obstacle_mask)
         
         
         for u in range(self.width):
@@ -232,7 +234,7 @@ class ipm_processes:
                     y_int.append(int(Mapy[v][u]) + abs(self.Pbox_min_y1)-1)
                     value_int.append(ori_image_r[v][u])
         
-        cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/IPM_almost_multi_modal.jpeg', output_img)
+        #cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/IPM_almost_multi_modal.jpeg', output_img)
         # Cyle for for interpolation
         end = timer()
         print("Time"+str(end-start))
@@ -251,8 +253,9 @@ class ipm_processes:
 
         
         interpolated_img=self.interpolation_first_phase(x_int,y_int,value_int)
+        #cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/IPM_interpolated.jpeg', interpolated_img)
         #self.perspective_visualization(interpolated_img,Pbox_min_x1,Pbox_max_x1,Pbox_min_y1,Pbox_max_y1,rsf_factor)
-        self.points_in_image_v2(interpolated_img,copy.deepcopy(Pro2),ori_image_r)
+        self.points_in_image_v2(interpolated_img,copy.deepcopy(k),copy.deepcopy(proj),ori_image_r)
         return (output_img)
 
     def calculate_new_XY(self, Pro, point_x, point_y):
@@ -320,7 +323,7 @@ class ipm_processes:
         cv2.waitKey(0)'''
 
 
-    def pixel_mapping_v3(self,Pro2):
+    def pixel_mapping_v3(self,Pro2,obst_mask):
         #Function to create the mapes Mapx & Mapy
         #Pro2-Matrice to transform
         #box_limits1 & box_limits2-matrices containing the limits of the projection box
@@ -338,14 +341,15 @@ class ipm_processes:
         start=timer()
         for u in range(self.width):
             for v in range(self.height):
-                x, y =self.calculate_new_XY(Pro2, u, v)
+                if(obst_mask[v][u]==[255,255,255]).all():
+                    x, y =self.calculate_new_XY(Pro2, u, v)
 
-                #print("Is it in or not?"+str(self.final_poly.contains(point)))
-                if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
-                    Mapx[v][u] = x
-                    Mapy[v][u] = y
-                    Mapped[v][u] = 1
-                    Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
+                    #print("Is it in or not?"+str(self.final_poly.contains(point)))
+                    if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
+                        Mapx[v][u] = x
+                        Mapy[v][u] = y
+                        Mapped[v][u] = 1
+                        Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
 
         print("Time in the loop "+str(timer()-start))
 
@@ -386,7 +390,7 @@ class ipm_processes:
         return output_img,Mapx,Mapy,Mapped,Gmapped  
 
 
-    def points_in_image_v2(self,interpolated_img,transf_matrix,original_img):
+    def points_in_image_v2(self,interpolated_img,intri_matrix,extrin_matrix,original_img):
         #Function for visualization of the cloud points over the ipm image created
         #functions which puts existing coordinates over ipm image
         init_coords=self.initial_coll_coords
@@ -403,88 +407,13 @@ class ipm_processes:
         plt.plot(x_init2,y_init2,'r-')
         plt.show()'''
 
-        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
-        #It's prepared for only 2 clous points
-        my_color=['b','r']
-        i=0
-        my_labels=['Points of left laser','Points of right laser']
-        for cloud in init_coords:
-            x_init=[]
-            y_init=[]
-            for my_point in cloud:
-                x_init.append(my_point[0])
-                y_init.append(my_point[1])
-            plt.scatter(x_init,y_init,marker='o',c=my_color[i],label=my_labels[i])
+        #self.imshow1_cloudpoints_image(interpolated_img,init_coords)
+        #self.imshow1_cloud_indiv_polygon_image(interpolated_img,init_coords)
+        (x_init,y_init)=self.imshow1_cloud_joint_polygon_image(interpolated_img,coll_coord_x,coll_coord_y)
+        #self.imshow_polygon_original_image(transf_matrix,coll_coord_x,coll_coord_y,x_init,y_init,original_img,interpolated_img)
+        self.imshow_polygon_original_image_correct(intri_matrix,extrin_matrix,coll_coord_x,coll_coord_y,x_init,y_init,original_img,interpolated_img)
+        raw_input()
         
-            i+=1
-        plt.title('Overlay of each cloud points over the IPM image')
-        plt.legend()
-        plt.show()
-
-        #Another format
-        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
-        my_color=['b','r']
-        j=0
-        my_labels=['Points of left laser','Points of right laser']
-        for cloud in init_coords:
-            x_init=[]
-            y_init=[]
-            for i in range(len(cloud)):
-                x_init.append(cloud[i][0])
-                y_init.append(cloud[i][1])
-            x_init.append(cloud[0][0])
-            y_init.append(cloud[0][1])
-            plt.plot(x_init,y_init,marker='o',c=my_color[j],label=my_labels[j])
-            j+=1
-
-        plt.title('Overlay of each cloud points over the IPM image')
-        plt.legend()
-        plt.show()
-
-        #Another format
-
-        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
-        x_init=[]
-        y_init=[]
-        for i in range(-1,len(coll_coord_x)):
-            
-            x_init.append(coll_coord_x[i])
-            y_init.append(coll_coord_y[i])
-
-        plt.plot(x_init,y_init,marker='o',c='r')
-
-        
-        plt.legend()
-        plt.show()
-
-
-        #Another debugging plot 
-        plt.subplot(131)
-        
-        plt.imshow(original_img,extent=[0, width, 0, height])
-
-        #time.sleep(1000)
-        u=[]
-        v=[]
-        image_scale=0
-        for i in range(len(coll_coord_x)):
-            vect_coord=np.array([[coll_coord_x[i]],[-coll_coord_y[i]],[0],[1]])
-            image_coord=np.dot(transf_matrix,vect_coord)
-            image_scale=image_coord[2]
-            u.append(int(-image_coord[0]))
-            v.append(int(image_coord[1]))
-        
-        plt.plot(u,v,'r')
-        plt.title('Polygon of cloud points created from the perspective mapping ')
-        plt.subplot(133)
-        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
-        plt.plot(x_init,y_init,marker='o',c='r')
-        plt.title('Overlay of each cloud points over the IPM image')
-        plt.show()
-
-
-
-
 
 
 
@@ -619,10 +548,228 @@ class ipm_processes:
         plt.show()
 
 
+    def imshow1_cloudpoints_image(self,interpolated_img,init_coords):
+        fig1=plt.figure(1)
+        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
+        #It's prepared for only 2 clous points
+        my_color=['b','r']
+        i=0
+        my_labels=['Points of left laser','Points of right laser']
+        for cloud in init_coords:
+            x_init=[]
+            y_init=[]
+            for my_point in cloud:
+                x_init.append(my_point[0])
+                y_init.append(my_point[1])
+            plt.scatter(x_init,y_init,marker='o',c=my_color[i],label=my_labels[i])
+        
+            i+=1
+        plt.title('Overlay of each cloud points over the IPM image')
+        plt.legend()
+        fig1.show()
+    
+    def imshow1_cloud_indiv_polygon_image(self,interpolated_img,init_coords):
+        fig2=plt.figure(2)
+        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
+        my_color=['b','r']
+        j=0
+        my_labels=['Points of left laser','Points of right laser']
+        for cloud in init_coords:
+            x_init=[]
+            y_init=[]
+            for i in range(len(cloud)):
+                x_init.append(cloud[i][0])
+                y_init.append(cloud[i][1])
+            x_init.append(cloud[0][0])
+            y_init.append(cloud[0][1])
+            plt.plot(x_init,y_init,marker='o',c=my_color[j],label=my_labels[j])
+            j+=1
 
-   
+        plt.title('Overlay of each cloud points over the IPM image')
+        plt.legend()
+        fig2.show()
+
+    def imshow1_cloud_joint_polygon_image(self,interpolated_img,coll_coord_x,coll_coord_y):
+        fig3=plt.figure(3)
+        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
+        x_init=[]
+        y_init=[]
+        for i in range(-1,len(coll_coord_x)):
+            x_init.append(coll_coord_x[i])
+            y_init.append(coll_coord_y[i])
+        plt.plot(x_init,y_init,marker='o',c='r')        
+        plt.legend()
+        fig3.show()
+        return (x_init,y_init)
+
+
+    def imshow_polygon_original_image(self,transf_matrix,coll_coord_x,coll_coord_y,x_init,y_init,original_img,interpolated_img):
+        fig4=plt.figure(4)
+        plt.subplot(131)
+        plt.imshow(original_img,extent=[0, self.width, 0, self.height])
+        #time.sleep(1000)
+        u=[]
+        v=[]
+        image_scale=0
+        for i in range(len(coll_coord_x)):
+            vect_coord=np.array([[coll_coord_x[i]],[-coll_coord_y[i]],[0],[1]])
+            image_coord=np.dot(transf_matrix,vect_coord)
+            image_scale=image_coord[2]
+            u.append(int(image_coord[0]/image_scale))
+            v.append(int(image_coord[1]/image_scale))
+        plt.plot(u,v,'r')
+        plt.title('Polygon of cloud points created from the perspective mapping ')
+        plt.subplot(133)
+        plt.imshow(interpolated_img,extent=[self.Pbox_min_x1, self.Pbox_max_x1, self.Pbox_min_y1, self.Pbox_max_y1])
+        plt.plot(x_init,y_init,marker='o',c='r')
+        plt.title('Overlay of each cloud points over the IPM image')
+        fig4.show()
+        fig5=plt.figure(5)
+        plt.imshow(original_img,origin='upper',extent=[0, self.width, 0, self.height])
+        plt.plot(u,v,'r')
+        plt.title('Polygon of cloud points created from the perspective mapping ')
+        fig5.show()
+
+
+    def imshow_polygon_original_image_correct(self,intrin_matrix,extrin_matrix,coll_coord_x,coll_coord_y,x_init,y_init,original_img,interpolated_img):
+        #Function to do exacly what is 
+        fig6=plt.figure(6)
+        plt.gca().invert_yaxis()
+        new_width=np.size(original_img,1)
+        new_height=np.size(original_img,0)
+        plt.imshow(original_img)
+        u=[]
+        v=[]
+        
+        free_obst_coord=[]
+        image_scale=0
+        for i in range(len(coll_coord_x)):
+            a_pixel=[]
+            vect_coord=np.array([[coll_coord_x[i]],[coll_coord_y[i]],[0],[1]])
+            pt_camera3D=np.dot(extrin_matrix,vect_coord)
+            if(pt_camera3D[2]>0):
+                image_coord=np.dot(intrin_matrix,pt_camera3D)
+                image_scale=image_coord[2]
+                xpixel=int(image_coord[0]/image_scale)
+                ypixel=int(image_coord[1]/image_scale)
+                a_pixel.append(xpixel)
+                a_pixel.append(ypixel)
+                free_obst_coord.append(a_pixel)
+                u.append(xpixel)
+                v.append(ypixel)
+
+        Poly1=Polygon(free_obst_coord)
+        #Next section to make polygon of image
+        image_coord=[[0,0],[self.width-1,0],[self.width-1,self.height-1],[0,self.height-1]]
+        Poly2=Polygon(image_coord)
+        multi_poly=[]
+        if(Poly2.intersects(Poly1)):
+            print("Polygon1 "+str(Poly1))
+            print("Polygon2 "+str(Poly2))
+            Poly1 = Poly1.buffer(0)
+            intersection=Poly2.intersection(Poly1)
+            nonoverlap=Poly2.difference(intersection)
+            multi_poly.append(nonoverlap)
+        else:
+            multi_poly.append(nonoverlap)
+        
+        #final_poly=MultiPolygon(multi_poly)
+        plt.plot(u,v,'r')
+        fig6.show()
+
+        fig7=plt.figure(7)
+        plt.gca().invert_yaxis()
+        plt.imshow(original_img)
+        #Dividing Polygon in set of coordinates
+        multi_coords=[]
+        for a_poly in multi_poly:
+            x, y = a_poly.exterior.coords.xy
+            plt.plot(x,y,'r')
+            multi_coords.append([x,y])
+
+        fig7.show()
+
+    def free_obstacle_masking(self,intrinsic_matrix,extrinsic_matrix,original_img):
+        #Function to mask the obstacles in the original image
+        #Initialization of important variables
+        
+        final_mask=np.zeros((self.height,self.width),dtype=np.uint8)
+        useless_mask=np.zeros((self.height+2,self.width+2),dtype=np.uint8)
+        coll_coord_x=self.coll_coord_x
+        coll_coord_y=self.coll_coord_y
+        
+        free_obst_coord=[]
+        image_scale=0
+        for i in range(len(coll_coord_x)):
+            a_pixel=[]
+            vect_coord=np.array([[coll_coord_x[i]],[coll_coord_y[i]],[0],[1]])
+            pt_camera3D=np.dot(extrinsic_matrix,vect_coord)
+            if(pt_camera3D[2]>0):
+                image_coord=np.dot(intrinsic_matrix,pt_camera3D)
+                image_scale=image_coord[2]
+                xpixel=int(image_coord[0]/image_scale)
+                ypixel=int(image_coord[1]/image_scale)
+                a_pixel.append(xpixel)
+                a_pixel.append(ypixel)
+                free_obst_coord.append(a_pixel)
+
+        Poly1=Polygon(free_obst_coord)
+        #Next section to make polygon of image
+        image_coord=[[0,0],[self.width-1,0],[self.width-1,self.height-1],[0,self.height-1]]
+
+        Poly2=Polygon(image_coord)
+        multi_poly=[]
+        if(Poly2.intersects(Poly1)):
+            Poly1 = Poly1.buffer(0)
+            intersection=Poly2.intersection(Poly1)
+            use_poly=intersection
+            if use_poly.geom_type == 'MultiPolygon':
+                multi_poly=list(use_poly)
+            elif use_poly.geom_type == 'Polygon':
+                multi_poly.append(use_poly)
+        else:
+            multi_poly.append(Poly2)
+        
+        #Dividing Polygon in set of coordinates
+        
+        for a_poly in multi_poly:
+            my_mask=np.zeros((self.height,self.width), dtype=np.uint8)
+            
+            x, y = a_poly.exterior.coords.xy
+            for i in range(len(x)):
+                cv2.line(my_mask,(int(x[i-1]),int(y[i-1])),(int(x[i]),int(y[i])),[255,255,255],1)
+            
+            sum_x=0
+            sum_y=0
+            total_n=0
+            for x_pixel in range(self.width):
+                for y_pixel in range(self.height):
+                    if(my_mask[y_pixel][x_pixel]==[255,255,255]).all():
+                        sum_x=sum_x+x_pixel
+                        sum_y=sum_y+y_pixel
+                        total_n=total_n+1
+            x_cent=int(sum_x/float(total_n))
+            y_cent=int(sum_y/float(total_n))
+            cv2.floodFill(my_mask,useless_mask,(x_cent,y_cent),255)
+            final_mask=final_mask+my_mask
+        return final_mask
+            
+            
+            
+
+
+
 
 
     
-        
+
+
+
+
+
+
+
+
+
+
 
