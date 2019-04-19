@@ -148,14 +148,29 @@ def main():
     while not rospy.is_shutdown():
         #print(str(info_c.flag_synch))
         if(flag_first_time == 0 and info_c.flag_synch == 1 and info_c.flag_synch_debug==1):
-            print("Passa aqui")
+            
             flag_first_time = 1
-            IPM_img=ipm_x.IPM(info_c)
-            IPM_img = info_c.bridge.cv2_to_imgmsg(IPM_img,"bgr8")
+            print("Begginning of ipm  processing")
+            time_file=open('/home/hellxberg/ws_thesis/src/ipm_perception/src/multimodal_IPM_mode_a_no_inter.txt','w')
+            #for i in range(5,101,5):
+
+            my_scale=100 #percentage
+            rescaling_factor=(1/(my_scale/100.0))
+            print("Begin")
+            
+            start=timer()
+            (width,height)=ipm_x.IPM(info_c,rescaling_factor)
+            print("Total time "+str(timer()-start))
+            #time_file.write(str(my_scale)+" ,"+str(width)+" ,"+str(height)+" ,"+str(time_took)+"\n")
+            #print("End of cycle")
+            
+            #time_file.close()
+            #IPM_img = info_c.bridge.cv2_to_imgmsg(IPM_img,"bgr8")
             flag_publish = 1
-            #exit(0)
+            exit(0)
         if(flag_publish==1):
-            img_pub.publish(IPM_img)
+            meme_machine=1
+            #img_pub.publish(IPM_img)
         rospy.sleep(0.1)
 
 

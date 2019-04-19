@@ -17,7 +17,6 @@ import os
 import time
 import matplotlib.pyplot as plt 
 from mpl_toolkits.mplot3d import Axes3D
-import time
 from timeit import default_timer as timer
 from scipy.interpolate import griddata
 import laser_geometry.laser_geometry as lg
@@ -26,6 +25,12 @@ from cloud_points_processing import cloud_points_processing
 from matplotlib.path import Path 
 import matplotlib.patches as patches
 
+
+flag_verbose=True
+
+def my_print(str):
+    if(flag_verbose):
+        print(str)
 
 class ipm_processes:
 
@@ -159,10 +164,10 @@ class ipm_processes:
         return rescaled_image,k
 
 
-    def IPM(self, infor):
-        print("Begginning of ipm  processing")
+    def IPM(self, infor,rescaling_factor):
+        self.rescaling_factor=rescaling_factor
         # Function where the main process of IPM happens
-
+        start1=timer()
         # Colocar a matriz de projecao em formato de array(ori_image_r,k,width,height)
         k = np.array([[infor.P[0], infor.P[1], infor.P[2], infor.P[3]], [infor.P[4], infor.P[5], infor.P[6], infor.P[7]], [infor.P[8], infor.P[9], infor.P[10], infor.P[11]]])
         proj = infor.trans_matrix
@@ -171,12 +176,12 @@ class ipm_processes:
         img_height=np.size(ori_image,0)
         flag_other_image=0
         if(flag_other_image == 0):
-            (ori_image_r,k)=self.image_rescale(ori_image,k,img_width,img_height,self.rescaling_factor)
+            (ori_image_r,k)=self.image_rescale(ori_image,k,img_width,img_height,rescaling_factor)
             #(ori_image_r, k, width, height) = self.preliminary_rescaling(rescaling_factor, rescaling_factor, k, ori_image,width,height)
         else:
             (ori_image_r,k)=self.image_rescale_debugg(k,img_width,img_height)
             #(ori_image_r, k, width, height) = self.adjust_out_imgs(rescaling_factor, k, ori_image,width,height)
-        
+        print("Rescaling time"+str(timer()-start1))
 
         # Rescalling proj matrix
         proj[0][3] = proj[0][3]*self.rsf_factor
@@ -184,60 +189,83 @@ class ipm_processes:
         proj[2][3] = proj[2][3]*self.rsf_factor
         Pro2 = np.dot(k, proj)
 
-        #TODO i need to change the intrinsic and extrinsic parameters to original settings
         #self.perspective_mapping(copy.deepcopy(Pro2),ori_image_r)
-        print("meh")
        
         #For interpolation
         x_int=[]
         y_int=[]
         value_int=[]
-
-        start = timer()
-        #Create mapping variables
-        #TODO update or erase the code comented bellow (not organized enough, will give problems near future)
-        '''if(self.flag_debugging_mode==0):
-            (output_img,Mapx,Mapy,Mapped,Gmapped)=self.pixel_mapping(Pro2)
-        else:
-            (output_img,Mapx,Mapy,Mapped,Gmapped,output_img2,Mapped2,Gmapped2,colour_img) =self.pixel_mapping(Pro2)'''
         
+        start2=timer()
+        obstacle_mask=self.free_obstacle_masking_v2(copy.deepcopy(k),copy.deepcopy(proj),ori_image_r)
+        #obstacle_mask=self.free_obstacle_masking(copy.deepcopy(k),copy.deepcopy(proj),ori_image_r)
+        print("Masking time "+str(timer()-start2))
+        self.obstacle_mask=obstacle_mask
+        start3=timer()
+        (output_img,Mapx,Mapy,Mapped)=self.pixel_mapping_mode_e(Pro2,obstacle_mask)
+        print("Mapping time "+str(timer()-start3))
+        start4=timer()
+        #(output_img,Mapx,Mapy,Mapped,Gmapped)=self.pixel_mapping_mode_b(Pro2,obstacle_mask)
+        map_condition3=np.where(Mapped==1,True,False)
+        #print("Mapping \n")
+        #print(str(map_condition3.shape))
 
-        # Ciclo para criar a imagem com a nova informacao 
-        '''for u in range(self.width):
-            for v in range(self.height):
-                if(self.flag_debugging_mode==1):
-                    if(Mapped2[v][u]):
-                        output_img2[int(Mapy[v][u]) + abs(self.Pbox_min_y2)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x2)-1] += (ori_image_r[v][u])/Gmapped2[Mapy[v][u]][Mapx[v][u]]
-                        colour_img[int(Mapy[v][u]) + abs(self.Pbox_min_y2)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x2)-1]=[0,0,200]
-                if(Mapped[v][u]):
-                    output_img[int(Mapy[v][u]) + abs(self.Pbox_min_y1)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x1)-1] = (ori_image_r[v][u])#/Gmapped[Mapy[v][u]][Mapx[v][u]]
-                    #Acrescento da interpolacao de pixels, ira ser posteriormente alterado para suportar varias imagens de IPM
-                    #Por agora sera aqui aplicado
-                    x_int.append(int(Mapx[v][u]) + abs(self.Pbox_min_x1)-1)
-                    y_int.append(int(Mapy[v][u]) + abs(self.Pbox_min_y1)-1)
-                    value_int.append(ori_image_r[v][u])
-                    if(self.flag_debugging_mode==1):
-                        colour_img[int(Mapy[v][u]) + abs(self.Pbox_min_y2)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x2)-1]=[0,200,0]'''
-                
-
-        obstacle_mask=self.free_obstacle_masking(copy.deepcopy(k),copy.deepcopy(proj),ori_image_r)        
-        (output_img,Mapx,Mapy,Mapped,Gmapped)=self.pixel_mapping_v3(Pro2,obstacle_mask)
+        Mapx = (Mapx+abs(self.Pbox_min_x1)-1).astype(int)
+        Mapy = (Mapy+abs(self.Pbox_min_y1)-1).astype(int)
+        
+        Maplinear_out=Mapy*self.DISTXmax+Mapx
+        Maplinear_out=Maplinear_out*3
+        #print("proper dimensions")
         
         
+        n=(self.height)*(self.width)
+        Maplinear_in=np.arange(n)
+        
+        #print("Shape of indexing matrices")
+        
+        Maplinear_in=Maplinear_in[map_condition3]
+        Maplinear_in1=Maplinear_in*3
+        Maplinear_in2=Maplinear_in1+1
+        Maplinear_in3=Maplinear_in2+1
+        Maplinear_out1=Maplinear_out
+        Maplinear_out2=Maplinear_out1+1
+        Maplinear_out3=Maplinear_out2+1
+
+        #print(str(Maplinear_out.shape))
+        #print(str(Maplinear_in.shape))
+
+        output_img.ravel()[Maplinear_out]=ori_image_r.ravel()[Maplinear_in]
+        output_img.ravel()[Maplinear_out2]=ori_image_r.ravel()[Maplinear_in3]
+        output_img.ravel()[Maplinear_out3]=ori_image_r.ravel()[Maplinear_in3]
+        print("Indexing timer "+str(timer()-start4))
+        #print(str(output_img.shape))
+        #print(str(output_img))
+       
+
+        '''
         for u in range(self.width):
             for v in range(self.height):
                 if(Mapped[v][u]):
-                    output_img[int(Mapy[v][u]) + abs(self.Pbox_min_y1)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x1)-1] = (ori_image_r[v][u])#/Gmapped[Mapy[v][u]][Mapx[v][u]]
+                    #output_img[int(Mapy[v][u]) + abs(self.Pbox_min_y1)-1][int(Mapx[v][u]) + abs(self.Pbox_min_x1)-1] = (ori_image_r[v][u])#/Gmapped[Mapy[v][u]][Mapx[v][u]]
+                    
+                    output_img[Mapy[v][u]][Mapx[v][u]] = (ori_image_r[v][u])#/Gmapped[Mapy[v][u]][Mapx[v][u]]
+                    
+                    
                     #Acrescento da interpolacao de pixels, ira ser posteriormente alterado para suportar varias imagens de IPM
                     #Por agora sera aqui aplicado
                     x_int.append(int(Mapx[v][u]) + abs(self.Pbox_min_x1)-1)
                     y_int.append(int(Mapy[v][u]) + abs(self.Pbox_min_y1)-1)
-                    value_int.append(ori_image_r[v][u])
+                    value_int.append(ori_image_r[v][u])'''
         
+
+        '''Mapx = Mapx+abs(self.Pbox_min_y1)-1
+        Mapy = Mapy+abs(self.Pbox_min_y1)-1
+        output_img[Mapy.astype(int)][Mapy.astype(int)] = ori_image_r
+        '''
         #cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/IPM_almost_multi_modal.jpeg', output_img)
         # Cyle for for interpolation
-        end = timer()
-        print("Time"+str(end-start))
+        
+        
         #self.for_report(output_img)
         
         #print("Images Published")
@@ -248,15 +276,18 @@ class ipm_processes:
             #cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/Pos-IPM_colour.jpeg', colour_img)
             cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/Original_image.jpeg',ori_image)
 
-        cv2.imshow("Original IPM image",output_img)
-        cv2.waitKey(0)
+        #cv2.imshow("Original IPM image",output_img)
+        #cv2.waitKey(0)
 
         
-        interpolated_img=self.interpolation_first_phase(x_int,y_int,value_int)
+        #interpolated_img=self.interpolation_first_phase(x_int,y_int,value_int)
+        #cv2.imshow("meh",output_img)
+        #cv2.waitKey(0)
         #cv2.imwrite('/home/hellxberg/ws_thesis/src/ipm_perception/src/IPM_interpolated.jpeg', interpolated_img)
         #self.perspective_visualization(interpolated_img,Pbox_min_x1,Pbox_max_x1,Pbox_min_y1,Pbox_max_y1,rsf_factor)
-        self.points_in_image_v2(interpolated_img,copy.deepcopy(k),copy.deepcopy(proj),ori_image_r)
-        return (output_img)
+        #self.points_in_image_v2(interpolated_img,copy.deepcopy(k),copy.deepcopy(proj),ori_image_r)
+
+        return (self.width,self.height)
 
     def calculate_new_XY(self, Pro, point_x, point_y):
         #Function that calculates the new pixels coordinates, the basis of the IPM process
@@ -271,8 +302,7 @@ class ipm_processes:
         v=[]
         width=self.width
         height=self.height
-        print("Current width "+str(width))
-        print("CUrrent height "+str(height))
+
         #TO check the overlay of cloud over the image the image must be change. Since the y is inverse
         #It's only for debugging purposes
         '''canvas_fig=np.zeros((height,width, 3), np.uint8)
@@ -295,41 +325,16 @@ class ipm_processes:
         
         plt.plot(v,u,'r')
         plt.show()
-        #Just for fun draw on normal image
-        
 
 
-    '''def obstacle_mask(self):
 
-        obstacle_points= np.zeros((self.DISTYmax,self.DISTXmax), dtype=np.uint8)
-        obst_mask=np.zeros((self.DISTYmax+2,self.DISTXmax+2),dtype=np.uint8)
-        for i in range(len(self.coll_coord_x)):
-            print("Coordinates x "+str(self.offset_cloud_x+self.coll_coord_x[i]))
-            print("Coordinates y "+str(self.offset_cloud_y+self.coll_coord_y[i]))
-            cv2.line(obstacle_points,(self.offset_cloud_y+self.coll_coord_y[i-1],self.offset_cloud_x+self.coll_coord_x[i-1]),(self.offset_cloud_y+self.coll_coord_y[i],self.offset_cloud_x+self.coll_coord_x[i]),[255,255,255],1)
-            cv2.circle(obstacle_points, (self.offset_cloud_y+self.coll_coord_y[i-1],self.offset_cloud_x+self.coll_coord_x[i-1]), 5, 255, thickness=1, lineType=8, shift=0) 
+    def pixel_mapping_mode_b(self,Pro2,obst_mask):
 
-        print("my array"+str(self.coll_coord_x))
-        cv2.imshow("lines",obstacle_points)
-        #cv2.plot(self.coll_coord_x[:],self.coll_coord_y[:],'r')
-        cv2.waitKey(0)
-        print("Something isn't right")
-        print("X center "+str(self.center_coll_x))
-        print("Y center "+str(self.center_coll_y))
-        print("Image size"+str(np.size(obstacle_points)))
-
-        cv2.floodFill(obstacle_points,obst_mask,(self.center_coll_x,self.center_coll_y),255)
-        cv2.imshow("meh",obst_mask)
-        cv2.waitKey(0)'''
-
-
-    def pixel_mapping_v3(self,Pro2,obst_mask):
         #Function to create the mapes Mapx & Mapy
         #Pro2-Matrice to transform
         #box_limits1 & box_limits2-matrices containing the limits of the projection box
         #image_measures-matrice with image dimensions
 
-        start = timer()
         #self.obstacle_mask()
         #Define here the non debugging variables ------------------------------
         Mapx = np.zeros((self.height, self.width), dtype=int)
@@ -337,27 +342,218 @@ class ipm_processes:
         Mapped = np.zeros((self.height, self.width), dtype=int)
         output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
         Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
-        print("TIme making the images "+str(timer()-start))
+
+        #if(flag_verbose):
+            #print()
+
+
         start=timer()
         for u in range(self.width):
             for v in range(self.height):
-                if(obst_mask[v][u]==[255,255,255]).all():
+                #if(obst_mask[v][u]==[255,255,255]).all():
+                if(obst_mask[v][u]==255):
                     x, y =self.calculate_new_XY(Pro2, u, v)
-
-                    #print("Is it in or not?"+str(self.final_poly.contains(point)))
                     if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
                         Mapx[v][u] = x
                         Mapy[v][u] = y
                         Mapped[v][u] = 1
                         Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
 
-        print("Time in the loop "+str(timer()-start))
-
         return output_img,Mapx,Mapy,Mapped,Gmapped 
 
 
+    def pixel_mapping_mode_c(self,Pro2,obst_mask):
 
-    def pixel_mapping_v2(self,Pro2):
+        #Function to create the mapes Mapx & Mapy
+        #Pro2-Matrice to transform
+        #box_limits1 & box_limits2-matrices containing the limits of the projection box
+        #image_measures-matrice with image dimensions
+
+        #self.obstacle_mask()
+        #Define here the non debugging variables ------------------------------
+        Mapx = np.zeros((self.height, self.width), dtype=int)
+        Mapy = np.zeros((self.height, self.width), dtype=int)
+        Mapped = np.zeros((self.height, self.width), dtype=int)
+        output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
+        Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
+
+        #if(flag_verbose):
+            #print()
+
+
+        start=timer()
+        for u in range(self.width):
+            for v in range(self.height):
+                #if(obst_mask[v][u]==[255,255,255]).all():
+                if(obst_mask[v][u]==255):
+                    x, y =self.calculate_new_XY(Pro2, u, v)
+                    if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
+                        Mapx[v][u] = x
+                        Mapy[v][u] = y
+                        Mapped[v][u] = 1
+                        Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
+
+        return output_img,Mapx,Mapy,Mapped,Gmapped
+    
+    def pixel_mapping_mode_d(self,Pro2):
+
+        #Function to create the mapes Mapx & Mapy
+        #Pro2-Matrice to transform
+        #box_limits1 & box_limits2-matrices containing the limits of the projection box
+        #image_measures-matrice with image dimensions
+        start=timer()
+
+        
+        #self.obstacle_mask()
+        #Define here the non debugging variables ------------------------------
+        #Mapx = np.zeros((self.height, self.width), dtype=int)
+        #Mapy = np.zeros((self.height, self.width), dtype=int)
+        #Mapped = np.zeros((self.height, self.width), dtype=int)
+        output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
+        Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
+
+        trans_vector=np.array([[-Pro2[0][3]],[-Pro2[1][3]],[-Pro2[2][3]],[0]])
+
+        xx,yy=np.meshgrid(np.arange(self.width),np.arange(self.height))
+        x=xx.ravel()
+        y=yy.ravel()
+        #Defining the most important matrices
+        p11=Pro2[0][0]
+        p12=Pro2[0][1]
+        p13=Pro2[0][2]
+        p21=Pro2[1][0]
+        p22=Pro2[1][1]
+        p23=Pro2[1][2]
+        p31=Pro2[2][0]
+        p32=Pro2[2][1]
+        p33=Pro2[2][2]
+        #Creating (in a hardcoded manner )the inverse matrix
+        rotation_inv=np.array([[(p22 - p32*y)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y),-(p12 - p32*x)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y),-(p22*x - p12*y)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y),(p12*p23 - p13*p22 + p22*p33*x - p23*p32*x - p12*p33*y + p13*p32*y)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y)],[-(p21 - p31*y)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y),(p11 - p31*x)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y),(p21*x - p11*y)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y),-(p11*p23 - p13*p21 + p21*p33*x - p23*p31*x - p11*p33*y + p13*p31*y)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y)],[0,0,0,1],[ -(p21*p32 - p22*p31)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y), (p11*p32 - p12*p31)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y), -(p11*p22 - p12*p21)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y), (p11*p22*p33 - p11*p23*p32 - p12*p21*p33 + p12*p23*p31 + p13*p21*p32 - p13*p22*p31)/(p11*p22 - p12*p21 + p21*p32*x - p22*p31*x - p11*p32*y + p12*p31*y)]])
+
+        result=np.dot(rotation_inv,trans_vector)
+        D_result=result[3,0]
+        x_result=(result[0,0]/D_result)
+        y_result=(result[1,0]/D_result)
+        print("X result")
+        print(str(x_result))
+        mapp=x_result/x_result
+        mapping_process=np.where(((x_result > self.Pbox_min_x1) & (x_result < self.Pbox_max_x1)) & ((y_result > self.Pbox_min_y1) & (y_result <self.Pbox_max_y1)),(x_result,y_result,mapp),False)
+
+        Mapx=mapping_process[0].reshape(self.height,self.width)
+        Mapy=mapping_process[1].reshape(self.height,self.width)
+        Mapped=mapping_process[2].reshape(self.height,self.width)
+
+        print("Mapx\n")
+        print(str(Mapx))
+        print("Mapy\n")
+        print(str(Mapy))
+        print("Mapped\n")
+        print(str(Mapped))
+
+        return output_img,Mapx,Mapy,Mapped
+
+    def pixel_mapping_mode_e(self,Pro2,obst_mask):
+
+        #Function to create the mapes Mapx & Mapy
+        #Pro2-Matrice to transform
+        #box_limits1 & box_limits2-matrices containing the limits of the projection box
+        #image_measures-matrice with image dimensions
+        #start=timer()
+
+        
+        #self.obstacle_mask()
+        #Define here the non debugging variables ------------------------------
+        #Mapx = np.zeros((self.height, self.width), dtype=int)
+        #Mapy = np.zeros((self.height, self.width), dtype=int)
+        #Mapped = np.zeros((self.height, self.width), dtype=int)
+        output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
+        Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
+
+        trans_vector=np.array([[-Pro2[0][3]],[-Pro2[1][3]],[-Pro2[2][3]],[0]])
+
+        xx,yy=np.meshgrid(np.arange(self.width),np.arange(self.height))
+        point_x=xx.ravel()
+        point_y=yy.ravel()
+        #Defining the most important matrices
+        p11=Pro2[0][0]
+        p12=Pro2[0][1]
+        p13=Pro2[0][2]
+        p21=Pro2[1][0]
+        p22=Pro2[1][1]
+        p23=Pro2[1][2]
+        p31=Pro2[2][0]
+        p32=Pro2[2][1]
+        p33=Pro2[2][2]
+        Pro=Pro2
+
+        obst_mask=obst_mask.ravel()
+        #Conditions
+        mapp_condi1=np.array(obst_mask==255)
+
+        '''first_mapping=np.vstack([point_x, point_y])
+        second_mapping=first_mapping[:,mapp_condi1]
+        point_x=second_mapping[0,:]
+        point_y=second_mapping[1,:]'''
+        first_mapping=mapping_process=np.where(mapp_condi1,(point_x,point_y),False)
+        point_x=first_mapping[0]
+        point_y=first_mapping[1]
+
+        D = point_x*(Pro[1][0]*Pro[2][1]-Pro[1][1]*Pro[2][0])+point_y*(Pro[2][0] * Pro[0][1]-Pro[2][1]*Pro[0][0])+Pro[0][0]*Pro[1][1]-Pro[0][1]*Pro[1][0]
+        X = (point_x*(Pro[1][1]*Pro[2][3]-Pro[1][3]*Pro[2][1])+point_y*(Pro[0][3]*Pro[2][1]-Pro[0][1]*Pro[2][3])-Pro[0][3]*Pro[1][1]+Pro[0][1]*Pro[1][3])/(D*1.0)
+        Y = (point_x*(Pro[1][0]*Pro[2][3]-Pro[1][3]*Pro[2][0])+point_y*(Pro[0][3] * Pro[2][0]-Pro[0][0]*Pro[2][3])+Pro[0][0]*Pro[1][3]-Pro[0][3]*Pro[1][0])/(D*1.0)
+
+        '''
+        mapp_condi2=np.array(((X > self.Pbox_min_x1) & (X < self.Pbox_max_x1)) & ((Y > self.Pbox_min_y1) & (Y <self.Pbox_max_y1)))
+        third_mapping=second_mapping[:,mapp_condi2]
+        Mapx=third_mapping[0,:]
+        Mapy=third_mapping[1,:]
+        '''
+        mapp=X/X
+        map_condition2=np.array(((X > self.Pbox_min_x1) & (X < self.Pbox_max_x1)) & ((Y > self.Pbox_min_y1) & (Y <self.Pbox_max_y1)))
+        #mapping_process=np.where(map_condition2,(X,Y,mapp),False)
+        Mapped=np.where(map_condition2,mapp,False)
+        '''Mapx=mapping_process[0].reshape(self.height,self.width)
+        Mapy=mapping_process[1].reshape(self.height,self.width)
+        Mapped=mapping_process[2].reshape(self.height,self.width)'''
+        '''Mapx=mapping_process[0,:]
+        Mapy=mapping_process[1,:]
+        Mapped=mapping_process[2,:]'''
+        Mapx=X[map_condition2]
+        Mapy=Y[map_condition2]
+        #print("Time of mapping process\n")
+        #print(str(timer()-start))
+
+        return output_img,Mapx,Mapy,Mapped
+
+
+    def pixel_mapping_original(self,Pro2):
+        #Function to create the mapes Mapx & Mapy
+        #Pro2-Matrice to transform
+        #box_limits1 & box_limits2-matrices containing the limits of the projection box
+        #image_measures-matrice with image dimensions
+
+        #self.obstacle_mask()
+        #Define here the non debugging variables ------------------------------
+        Mapx = np.zeros((self.height, self.width), dtype=int)
+        Mapy = np.zeros((self.height, self.width), dtype=int)
+        Mapped = np.zeros((self.height, self.width), dtype=int)
+        output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
+        Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
+
+        start=timer()
+        for u in range(self.width):
+            for v in range(self.height):
+                
+                x, y =self.calculate_new_XY(Pro2, u, v)
+                if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
+                    Mapx[v][u] = x
+                    Mapy[v][u] = y
+                    Mapped[v][u] = 1
+                    Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
+        return output_img,Mapx,Mapy,Mapped,Gmapped 
+
+
+    def pixel_mapping_mode_a(self,Pro2):
         #Function to create the mapes Mapx & Mapy
         #Pro2-Matrice to transform
         #box_limits1 & box_limits2-matrices containing the limits of the projection box
@@ -371,21 +567,17 @@ class ipm_processes:
         Mapped = np.zeros((self.height, self.width), dtype=int)
         output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
         Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
-        print("TIme making the images "+str(timer()-start))
         start=timer()
         for u in range(self.width):
             for v in range(self.height):
                 x, y =self.calculate_new_XY(Pro2, u, v)
                 point=Point(x,-y)
-                #print("Is it in or not?"+str(self.final_poly.contains(point)))
                 if(self.final_poly.contains(point)):
                     if(((x > self.Pbox_min_x1) and (x < self.Pbox_max_x1)) and ((y > self.Pbox_min_y1) and (y <self.Pbox_max_y1))):
                         Mapx[v][u] = x
                         Mapy[v][u] = y
                         Mapped[v][u] = 1
                         Gmapped[Mapy[v][u]][Mapx[v][u]] += 1
-
-        print("Time in the loop "+str(timer()-start))
 
         return output_img,Mapx,Mapy,Mapped,Gmapped  
 
@@ -409,15 +601,11 @@ class ipm_processes:
 
         #self.imshow1_cloudpoints_image(interpolated_img,init_coords)
         #self.imshow1_cloud_indiv_polygon_image(interpolated_img,init_coords)
-        (x_init,y_init)=self.imshow1_cloud_joint_polygon_image(interpolated_img,coll_coord_x,coll_coord_y)
+        #(x_init,y_init)=self.imshow1_cloud_joint_polygon_image(interpolated_img,coll_coord_x,coll_coord_y)
         #self.imshow_polygon_original_image(transf_matrix,coll_coord_x,coll_coord_y,x_init,y_init,original_img,interpolated_img)
-        self.imshow_polygon_original_image_correct(intri_matrix,extrin_matrix,coll_coord_x,coll_coord_y,x_init,y_init,original_img,interpolated_img)
-        raw_input()
+        #self.imshow_polygon_original_image_correct(intri_matrix,extrin_matrix,coll_coord_x,coll_coord_y,x_init,y_init,original_img,interpolated_img)
+        #raw_input()
         
-
-
-
-
 
     def points_in_image(self,interpolated_img):
         #Function for visualization of the cloud points over the ipm image created
@@ -457,8 +645,6 @@ class ipm_processes:
         for y in range(self.DISTYmax):
             for x in range(self.DISTXmax):
                 output_img[y][x]=zi[y][x]
-        cv2.imshow("Interpolated image",output_img)
-        cv2.waitKey(0)
         return output_img
         
 
@@ -509,7 +695,7 @@ class ipm_processes:
         Mapped = np.zeros((self.height, self.width), dtype=int)
         output_img = np.zeros((self.DISTYmax,self.DISTXmax, 3), np.uint8)
         Gmapped = np.zeros((self.DISTYmax,self.DISTXmax), dtype=int)
-        print("TIme making the images "+str(timer()-start))
+        
         start=timer()
         for u in range(self.width):
             for v in range(self.height):
@@ -524,7 +710,7 @@ class ipm_processes:
                         Mapped2[v][u] = 1
                         Gmapped2[Mapy[v][u]][Mapx[v][u]] += 1
 
-        print("Time in the loop "+str(timer()-start))
+        
         if(self.flag_debugging_mode==0):
             return output_img,Mapx,Mapy,Mapped,Gmapped  
         else:
@@ -664,8 +850,7 @@ class ipm_processes:
         Poly2=Polygon(image_coord)
         multi_poly=[]
         if(Poly2.intersects(Poly1)):
-            print("Polygon1 "+str(Poly1))
-            print("Polygon2 "+str(Poly2))
+            
             Poly1 = Poly1.buffer(0)
             intersection=Poly2.intersection(Poly1)
             nonoverlap=Poly2.difference(intersection)
@@ -737,8 +922,8 @@ class ipm_processes:
             
             x, y = a_poly.exterior.coords.xy
             for i in range(len(x)):
-                cv2.line(my_mask,(int(x[i-1]),int(y[i-1])),(int(x[i]),int(y[i])),[255,255,255],1)
-            
+                #cv2.line(my_mask,(int(x[i-1]),int(y[i-1])),(int(x[i]),int(y[i])),[255,255,255],1)
+                cv2.line(my_mask,(int(x[i-1]),int(y[i-1])),(int(x[i]),int(y[i])),255,1)
             sum_x=0
             sum_y=0
             total_n=0
@@ -752,9 +937,81 @@ class ipm_processes:
             y_cent=int(sum_y/float(total_n))
             cv2.floodFill(my_mask,useless_mask,(x_cent,y_cent),255)
             final_mask=final_mask+my_mask
+        #cv2.imshow("final_mask",final_mask)
+        #cv2.waitKey(0)
         return final_mask
             
             
+    def free_obstacle_masking_v2(self,intrinsic_matrix,extrinsic_matrix,original_img):
+        #Function to mask the obstacles in the original image
+        #Initialization of important variables
+        print("masking_debugging \n")
+        start=timer()
+        final_mask=np.zeros((self.height,self.width),dtype=np.uint8)
+        useless_mask=np.zeros((self.height+2,self.width+2),dtype=np.uint8)
+        coll_coord_x=self.coll_coord_x
+        coll_coord_y=self.coll_coord_y
+        
+        free_obst_coord=[]
+        image_scale=0
+        for i in range(len(coll_coord_x)):
+            a_pixel=[]
+            vect_coord=np.array([[coll_coord_x[i]],[coll_coord_y[i]],[0],[1]])
+            pt_camera3D=np.dot(extrinsic_matrix,vect_coord)
+            if(pt_camera3D[2]>0):
+                image_coord=np.dot(intrinsic_matrix,pt_camera3D)
+                image_scale=image_coord[2]
+                xpixel=int(image_coord[0]/image_scale)
+                ypixel=int(image_coord[1]/image_scale)
+                a_pixel.append(xpixel)
+                a_pixel.append(ypixel)
+                free_obst_coord.append(a_pixel)
+
+        print("Conversion time "+str(timer()-start))
+        start=timer()
+        Poly1=Polygon(free_obst_coord)
+        #Next section to make polygon of image
+        image_coord=[[0,0],[self.width-1,0],[self.width-1,self.height-1],[0,self.height-1]]
+
+        Poly2=Polygon(image_coord)
+        multi_poly=[]
+        if(Poly2.intersects(Poly1)):
+            Poly1 = Poly1.buffer(0)
+            intersection=Poly2.intersection(Poly1)
+            use_poly=intersection
+            if use_poly.geom_type == 'MultiPolygon':
+                multi_poly=list(use_poly)
+            elif use_poly.geom_type == 'Polygon':
+                multi_poly.append(use_poly)
+        else:
+            multi_poly.append(Poly2)
+        
+        #Dividing Polygon in set of coordinates
+        
+        for a_poly in multi_poly:
+            my_mask=np.zeros((self.height,self.width), dtype=np.uint8)
+            
+            x, y = a_poly.exterior.coords.xy
+            for i in range(len(x)):
+                #cv2.line(my_mask,(int(x[i-1]),int(y[i-1])),(int(x[i]),int(y[i])),[255,255,255],1)
+                cv2.line(my_mask,(int(x[i-1]),int(y[i-1])),(int(x[i]),int(y[i])),255,1)
+            sum_x=0
+            sum_y=0
+            total_n=0
+            for x_pixel in range(self.width):
+                for y_pixel in range(self.height):
+                    if(my_mask[y_pixel][x_pixel]==[255,255,255]).all():
+                        sum_x=sum_x+x_pixel
+                        sum_y=sum_y+y_pixel
+                        total_n=total_n+1
+            x_cent=int(sum_x/float(total_n))
+            y_cent=int(sum_y/float(total_n))
+            cv2.floodFill(my_mask,useless_mask,(x_cent,y_cent),255)
+            final_mask=final_mask+my_mask
+        #cv2.imshow("final_mask",final_mask)
+        #cv2.waitKey(0)
+        print("Drawing time "+str(timer()-start))
+        return final_mask
             
 
 
